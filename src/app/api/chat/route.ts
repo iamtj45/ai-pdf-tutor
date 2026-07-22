@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'No question provided' }, { status: 400 });
     }
 
-    const vectorStore = getVectorStore();
+   const vectorStore = await getVectorStore();
     if (!vectorStore) {
       return Response.json(
         { error: 'No document uploaded yet. Please upload a PDF first.' },

@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: 'No question provided' }, { status: 400 });
     }
 
-    const vectorStore = getVectorStore();
+    const vectorStore = await getVectorStore();
     if (!vectorStore) {
       return Response.json(
         { error: 'No document uploaded yet. Please upload a PDF first.' },
@@ -69,7 +69,7 @@ INSTRUCTIONS:
 
     // 3. Model
     const model = new ChatGoogleGenerativeAI({
-       model: 'gemini-3-flash',
+       model: "gemini-flash-latest",
       apiKey: process.env.GOOGLE_API_KEY!,
       temperature: 0.1,
     });

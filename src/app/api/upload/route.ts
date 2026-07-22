@@ -4,7 +4,7 @@ import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { MemoryVectorStore } from '@langchain/classic/vectorstores/memory';
 import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
-import { setVectorStore } from '@/lib/store';
+import { saveVectorStore } from '@/lib/store'; // ← changed from setVectorStore
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,9 +19,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Please upload a PDF file' }, { status: 400 });
     }
 
-    console.log(` Processing: ${file.name}`);
+    console.log(`Processing: ${file.name}`);
 
-    // Parse PDF
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const pdfData = await pdfParse(buffer);
@@ -29,7 +28,6 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Extracted ${fullText.length} chars from ${pdfData.numpages} pages`);
 
-    // Split text
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: 1000,
       chunkOverlap: 200,
@@ -38,19 +36,18 @@ export async function POST(request: NextRequest) {
     const chunks = await splitter.splitText(fullText);
     console.log(`✂️ Created ${chunks.length} chunks`);
 
-    // Create embeddings
-  const embeddings = new GoogleGenerativeAIEmbeddings({
-  apiKey: process.env.GOOGLE_API_KEY,
-  model: 'gemini-embedding-001',
-});
-    // Store in vector DB
+    const embeddings = new GoogleGenerativeAIEmbeddings({
+      apiKey: process.env.GOOGLE_API_KEY,
+      model: 'gemini-embedding-001',
+    });
+
     const store = await MemoryVectorStore.fromTexts(
       chunks,
       { source: file.name },
       embeddings
     );
 
-    setVectorStore(store);
+    await saveVectorStore(store); // ← now persists to Redis, not memory
 
     return NextResponse.json({
       success: true,
@@ -60,7 +57,6 @@ export async function POST(request: NextRequest) {
         totalChunks: chunks.length,
       },
     });
-
   } catch (error) {
     console.error('Upload error:', error);
     return NextResponse.json(
