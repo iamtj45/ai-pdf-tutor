@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
@@ -10,23 +10,42 @@ export const maxDuration = 30;
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const question = body.question;
+
+    const messages = body.messages;
+    if (!messages || messages.length === 0) {
+      return Response.json({ error: 'No messages provided' }, { status: 400 });
+    }
+
+    // Handles both AI SDK v4 (message.content) and v5 (message.parts) formats
+    const lastMessage = messages[messages.length - 1];
+    const question =
+      lastMessage.content ??
+      lastMessage.parts
+        ?.filter((p: any) => p.type === 'text')
+        .map((p: any) => p.text)
+        .join('') ??
+      '';
 
     if (!question) {
-      return NextResponse.json({ error: 'No question provided' }, { status: 400 });
+      return Response.json({ error: 'No question provided' }, { status: 400 });
     }
 
     const vectorStore = getVectorStore();
     if (!vectorStore) {
-      return NextResponse.json({ error: 'No document uploaded yet' }, { status: 400 });
+      return Response.json(
+        { error: 'No document uploaded yet. Please upload a PDF first.' },
+        { status: 400 }
+      );
     }
 
+    // 1. Retrieve relevant chunks from the vector store
     const retriever = vectorStore.asRetriever({ k: 3 });
     const docs = await retriever.invoke(question);
     const context = docs.map((doc: any) => doc.pageContent).join('\n\n');
 
+    // 2. Strict RAG prompt
     const prompt = PromptTemplate.fromTemplate(`
-You are a helpful AI assistant. Answer using ONLY the provided context.
+You are a highly accurate AI tutor. Answer the user's question using ONLY the provided context.
 
 CONTEXT:
 {context}
@@ -35,31 +54,54 @@ QUESTION:
 {question}
 
 INSTRUCTIONS:
-- Answer based strictly on the CONTEXT
-- If not in context, say "I cannot find that in the document"
-- Do not make up information
-- Be concise
+- Answer based STRICTLY on the CONTEXT provided above.
+- If the answer is not in the context, reply exactly with: "I cannot find that information in the provided document."
+- Do not make up information, hallucinate, or use outside knowledge.
+- Keep the answer concise, clear, and professional.
 `);
 
+    // 3. Model
     const model = new ChatGoogleGenerativeAI({
-  model: 'gemini-3.5-flash', // Direct upgrade path with faster, higher-quality coding capability
-  apiKey: process.env.GOOGLE_API_KEY!,
-  temperature: 0.1,
-});
+      model: "gemini-flash-latest",
+      apiKey: process.env.GOOGLE_API_KEY!,
+      temperature: 0.1,
+    });
 
+    // 4. Chain
     const chain = RunnableSequence.from([
-      { context: () => context, question: () => question },
+      {
+        context: () => context,
+        question: () => question,
+      },
       prompt,
       model,
       new StringOutputParser(),
     ]);
 
-    const answer = await chain.invoke(question);
+    // 5. Stream the response as plain text
+    const langchainStream = await chain.stream(question);
 
-    return NextResponse.json({ answer });
+    const encoder = new TextEncoder();
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of langchainStream) {
+            controller.enqueue(encoder.encode(chunk));
+          }
+          controller.close();
+        } catch (err) {
+          controller.error(err);
+        }
+      },
+    });
 
+    return new Response(readableStream, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
   } catch (error) {
-    console.error('Chat error:', error);
-    return NextResponse.json({ error: 'Error processing request' }, { status: 500 });
+    console.error('❌ Chat error:', error);
+    return new Response('Error processing request. Please check your API key and try again.', {
+      status: 500,
+    });
   }
 }

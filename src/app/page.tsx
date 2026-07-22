@@ -8,13 +8,14 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<any>(null);
 
-  // useChat hook handles streaming automatically!
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
-    api: '/api/chat',
-    onError: (error) => {
-      console.error('Chat error:', error);
-    },
-  });
+  // useChat hook handles streaming and message history automatically!
+ const { messages, input, handleInputChange, handleSubmit, isLoading, error } = useChat({
+  api: '/api/chat',
+  streamProtocol: 'text',   // ← add this line
+  onError: (err) => {
+    console.error('Chat error:', err);
+  },
+});
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -97,6 +98,13 @@ export default function Home() {
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4">2. Ask Questions</h2>
           
+          {/* Error Display */}
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 text-red-800 rounded-lg border border-red-200">
+              Error: {error.message}
+            </div>
+          )}
+
           {/* Messages Display */}
           <div className="mb-4 space-y-4 max-h-96 overflow-y-auto p-4 bg-gray-50 rounded-lg">
             {messages.length === 0 ? (
@@ -142,21 +150,27 @@ export default function Home() {
           {/* Input Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <textarea
-              value={input}
-              onChange={handleInputChange}
-              placeholder="What would you like to know about the document?"
-              className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-              rows={3}
-              disabled={isLoading}
-            />
-            
-            <button
-              type="submit"
-              disabled={!input.trim() || isLoading}
-              className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-            >
-              {isLoading ? 'AI is thinking...' : 'Send Question'}
-            </button>
+  value={input}
+  onChange={handleInputChange}
+  onKeyDown={(e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as any);
+    }
+  }}
+  placeholder="What would you like to know about the document?"
+  className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+  rows={3}
+  disabled={isLoading || !uploadResult?.success}
+/>
+
+<button
+  type="submit"
+  disabled={!input.trim() || isLoading || !uploadResult?.success}
+  className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+>
+  {isLoading ? 'AI is thinking...' : !uploadResult?.success ? 'Upload a PDF first' : 'Send Question'}
+</button>
           </form>
         </div>
 
